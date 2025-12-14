@@ -6,6 +6,7 @@ messages:
   ayah.select: "You selected: %s\n\nThis Surah has %d ayahs.\nPlease enter the ayah number (or type it directly):"
   ayah.enter_number: "Enter ayah number using the keyboard below, or type it directly:"
   ayah.cleared: "Number cleared. Please enter the ayah number again."
+  ayah.ayah: "Ayah"
 
   recording.prompt: "📱 Now, please send your voice recording of the ayah.\n\nNote: Voice messages will be automatically converted to the required format."
   recording.processing: "⏳ Processing your recording... This may take a few seconds."

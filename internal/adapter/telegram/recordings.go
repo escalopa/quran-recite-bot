@@ -80,7 +80,10 @@ func (b *Bot) handleViewRecording(ctx context.Context, msg *tgbotapi.Message, us
 		),
 	)
 
-	b.editMessageWithKeyboard(msg, text, keyboard)
+	edit := tgbotapi.NewEditMessageText(msg.Chat.ID, msg.MessageID, text)
+	edit.ReplyMarkup = &keyboard
+	edit.ParseMode = "HTML"
+	b.api.Send(edit)
 }
 
 // sendRecordingsList sends a paginated list of recordings
@@ -133,7 +136,11 @@ func (b *Bot) formatRecordingsList(lang domain.Language, recordings []*domain.Re
 		status := b.getStatusEmoji(rec.Status)
 		date := rec.CreatedAt.Format("2006-01-02 15:04")
 
-		btnText := fmt.Sprintf("%s %s - %s", status, rec.AyahID, date)
+		// Parse ayah ID to get surah and ayah numbers
+		surahNum, ayahNum := b.parseAyahID(rec.AyahID)
+		surahName := b.i18n.GetSurahName(lang, surahNum)
+
+		btnText := fmt.Sprintf("%s %s:%d - %s", status, surahName, ayahNum, date)
 		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(btnText, fmt.Sprintf("viewrec:%s", rec.ID)),
 		))
@@ -178,7 +185,12 @@ func (b *Bot) formatRecordingDetails(lang domain.Language, recording *domain.Rec
 
 	text.WriteString(fmt.Sprintf("<b>%s</b>\n\n", b.i18n.Get(lang, "recording.details")))
 	text.WriteString(fmt.Sprintf("🆔 ID: <code>%s</code>\n", recording.ID))
-	text.WriteString(fmt.Sprintf("📖 Ayah: <b>%s</b>\n", recording.AyahID))
+
+	// Parse and format ayah ID to be more readable
+	surahNum, ayahNum := b.parseAyahID(recording.AyahID)
+	surahName := b.i18n.GetSurahName(lang, surahNum)
+	text.WriteString(fmt.Sprintf("📖 Surah: <b>%s</b>\n", surahName))
+	text.WriteString(fmt.Sprintf("📄 %s: <b>%d</b>\n", b.i18n.Get(lang, "ayah.ayah"), ayahNum))
 	text.WriteString(fmt.Sprintf("📅 %s: %s\n",
 		b.i18n.Get(lang, "recording.created"),
 		recording.CreatedAt.Format(time.RFC822),
@@ -250,4 +262,18 @@ func (b *Bot) getOpEmoji(op domain.OpType) string {
 	default:
 		return "❓"
 	}
+}
+
+// parseAyahID parses ayah ID (XXXYYY format) to surah and ayah numbers
+func (b *Bot) parseAyahID(ayahID string) (surahNum int, ayahNum int) {
+	if len(ayahID) != 6 {
+		return 0, 0
+	}
+
+	// Parse surah number (first 3 digits)
+	fmt.Sscanf(ayahID[:3], "%d", &surahNum)
+	// Parse ayah number (last 3 digits)
+	fmt.Sscanf(ayahID[3:], "%d", &ayahNum)
+
+	return surahNum, ayahNum
 }

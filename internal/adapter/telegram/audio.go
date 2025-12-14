@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -40,20 +39,37 @@ func convertOGGtoWAV(oggData []byte) ([]byte, error) {
 		return nil, fmt.Errorf("ffmpeg not found: %w", err)
 	}
 
-	// Create temporary files
-	tmpDir := os.TempDir()
-	oggFile := filepath.Join(tmpDir, fmt.Sprintf("audio_%d.ogg", os.Getpid()))
-	wavFile := filepath.Join(tmpDir, fmt.Sprintf("audio_%d.wav", os.Getpid()))
+	// Create unique temporary OGG file
+	oggFile, err := os.CreateTemp("", "quran-audio-*.ogg")
+	if err != nil {
+		return nil, fmt.Errorf("create temp ogg file: %w", err)
+	}
+	oggPath := oggFile.Name()
 
-	// Cleanup
+	// Create unique temporary WAV file
+	wavFile, err := os.CreateTemp("", "quran-audio-*.wav")
+	if err != nil {
+		oggFile.Close()
+		os.Remove(oggPath)
+		return nil, fmt.Errorf("create temp wav file: %w", err)
+	}
+	wavPath := wavFile.Name()
+	wavFile.Close() // Close immediately since ffmpeg will write to it
+
+	// Cleanup temporary files
 	defer func() {
-		os.Remove(oggFile)
-		os.Remove(wavFile)
+		os.Remove(oggPath)
+		os.Remove(wavPath)
 	}()
 
-	// Write OGG data to file
-	if err := os.WriteFile(oggFile, oggData, 0644); err != nil {
-		return nil, fmt.Errorf("write ogg file: %w", err)
+	// Write OGG data to temporary file
+	if _, err := oggFile.Write(oggData); err != nil {
+		oggFile.Close()
+		return nil, fmt.Errorf("write ogg data: %w", err)
+	}
+
+	if err := oggFile.Close(); err != nil {
+		return nil, fmt.Errorf("close ogg file: %w", err)
 	}
 
 	// Convert using FFmpeg
@@ -62,11 +78,11 @@ func convertOGGtoWAV(oggData []byte) ([]byte, error) {
 	// -ac 1 mono audio
 	// -y overwrite output file
 	cmd := exec.Command("ffmpeg",
-		"-i", oggFile,
+		"-i", oggPath,
 		"-ar", "16000",
 		"-ac", "1",
 		"-y",
-		wavFile,
+		wavPath,
 	)
 
 	var stderr bytes.Buffer
@@ -77,8 +93,8 @@ func convertOGGtoWAV(oggData []byte) ([]byte, error) {
 		return nil, fmt.Errorf("ffmpeg conversion failed: %w", err)
 	}
 
-	// Read WAV file
-	wavData, err := os.ReadFile(wavFile)
+	// Read converted WAV file
+	wavData, err := os.ReadFile(wavPath)
 	if err != nil {
 		return nil, fmt.Errorf("read wav file: %w", err)
 	}
