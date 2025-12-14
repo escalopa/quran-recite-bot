@@ -1,0 +1,19 @@
+# Telegram Bot Configuration
+telegram:
+  token: "YOUR_TELEGRAM_BOT_TOKEN"
+
+# Redis Configuration
+redis:
+  addr: "localhost:6379"
+  password: ""
+  db: 0
+
+# Quran API Configuration
+quran_api:
+  base_url: "https://quran.namaz.live"
+  api_key: "YOUR_API_KEY"
+
+# Application Configuration
+app:
+  locales_dir: "locales"
+  default_language: "en"

@@ -1,0 +1,146 @@
+messages:
+  welcome.message: "🕌 Welcome to Quran Reading Bot!\n\nThis bot helps you practice Quran recitation by analyzing your recordings.\n\nPlease select a Surah to begin."
+  help.message: "📖 Available commands:\n/start - Start using the bot\n/language - Change language\n/help - Show this help message\n\nHow to use:\n1. Select a Surah\n2. Enter the Ayah number\n3. Send your voice recording\n4. Get instant feedback!"
+
+  surah.select: "Please select a Surah:"
+  ayah.select: "You selected: %s\n\nThis Surah has %d ayahs.\nPlease enter the ayah number (or type it directly):"
+  ayah.enter_number: "Enter ayah number using the keyboard below, or type it directly:"
+  ayah.cleared: "Number cleared. Please enter the ayah number again."
+
+  recording.prompt: "📱 Now, please send your voice recording of the ayah.\n\nNote: The recording should be in WAV format for best results."
+  recording.processing: "⏳ Processing your recording..."
+  recording.note_wav: "<b>Note:</b> Telegram voice messages are in OGG format. For best results, please send a WAV audio file as a document.\n\nWe'll process your recording and provide feedback shortly."
+  recording.complete: "Recording received! You can start a new recording by selecting another Surah."
+  recording.wer: "Word Error Rate"
+  recording.analysis: "📊 Analysis (word by word):"
+
+  language.select: "Please select your preferred language:"
+  language.changed: "✅ Language changed successfully!"
+
+  nav.prev: "Previous"
+  nav.next: "Next"
+  nav.back: "Back"
+  nav.done: "Done"
+
+  error.generic: "❌ An error occurred. Please try again."
+  error.unknown_command: "❓ Unknown command. Type /help for available commands."
+  error.invalid_input: "❌ Invalid input. Please try again."
+  error.invalid_ayah: "❌ Invalid ayah number. Please enter a valid number."
+  error.unexpected_voice: "❌ Please select a Surah and Ayah first before sending a recording."
+  error.download_failed: "❌ Failed to download your voice message. Please try again."
+
+surahs:
+  - Al-Fatihah
+  - Al-Baqarah
+  - Aal-E-Imran
+  - An-Nisa
+  - Al-Ma'idah
+  - Al-An'am
+  - Al-A'raf
+  - Al-Anfal
+  - At-Tawbah
+  - Yunus
+  - Hud
+  - Yusuf
+  - Ar-Ra'd
+  - Ibrahim
+  - Al-Hijr
+  - An-Nahl
+  - Al-Isra
+  - Al-Kahf
+  - Maryam
+  - Ta-Ha
+  - Al-Anbiya
+  - Al-Hajj
+  - Al-Mu'minun
+  - An-Nur
+  - Al-Furqan
+  - Ash-Shu'ara
+  - An-Naml
+  - Al-Qasas
+  - Al-Ankabut
+  - Ar-Rum
+  - Luqman
+  - As-Sajdah
+  - Al-Ahzab
+  - Saba
+  - Fatir
+  - Ya-Sin
+  - As-Saffat
+  - Sad
+  - Az-Zumar
+  - Ghafir
+  - Fussilat
+  - Ash-Shura
+  - Az-Zukhruf
+  - Ad-Dukhan
+  - Al-Jathiyah
+  - Al-Ahqaf
+  - Muhammad
+  - Al-Fath
+  - Al-Hujurat
+  - Qaf
+  - Adh-Dhariyat
+  - At-Tur
+  - An-Najm
+  - Al-Qamar
+  - Ar-Rahman
+  - Al-Waqi'ah
+  - Al-Hadid
+  - Al-Mujadila
+  - Al-Hashr
+  - Al-Mumtahanah
+  - As-Saf
+  - Al-Jumu'ah
+  - Al-Munafiqun
+  - At-Taghabun
+  - At-Talaq
+  - At-Tahrim
+  - Al-Mulk
+  - Al-Qalam
+  - Al-Haqqah
+  - Al-Ma'arij
+  - Nuh
+  - Al-Jinn
+  - Al-Muzzammil
+  - Al-Muddaththir
+  - Al-Qiyamah
+  - Al-Insan
+  - Al-Mursalat
+  - An-Naba
+  - An-Nazi'at
+  - Abasa
+  - At-Takwir
+  - Al-Infitar
+  - Al-Mutaffifin
+  - Al-Inshiqaq
+  - Al-Buruj
+  - At-Tariq
+  - Al-A'la
+  - Al-Ghashiyah
+  - Al-Fajr
+  - Al-Balad
+  - Ash-Shams
+  - Al-Layl
+  - Ad-Duha
+  - Ash-Sharh
+  - At-Tin
+  - Al-Alaq
+  - Al-Qadr
+  - Al-Bayyinah
+  - Az-Zalzalah
+  - Al-Adiyat
+  - Al-Qari'ah
+  - At-Takathur
+  - Al-Asr
+  - Al-Humazah
+  - Al-Fil
+  - Quraysh
+  - Al-Ma'un
+  - Al-Kawthar
+  - Al-Kafirun
+  - An-Nasr
+  - Al-Masad
+  - Al-Ikhlas
+  - Al-Falaq
+  - An-Nas
