@@ -69,7 +69,8 @@ const (
 
 // SessionData keys
 const (
-	SessionKeySurah    = "surah"
-	SessionKeyAyah     = "ayah"
-	SessionKeyLanguage = "language"
+	SessionKeySurah     = "surah"
+	SessionKeyAyah      = "ayah"
+	SessionKeyAyahInput = "ayah_input" // Accumulated digit input for ayah number
+	SessionKeyLanguage  = "language"
 )

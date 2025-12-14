@@ -1,18 +1,31 @@
 messages:
   welcome.message: "🕌 Welcome to Quran Reading Bot!\n\nThis bot helps you practice Quran recitation by analyzing your recordings.\n\nPlease select a Surah to begin."
-  help.message: "📖 Available commands:\n/start - Start using the bot\n/language - Change language\n/help - Show this help message\n\nHow to use:\n1. Select a Surah\n2. Enter the Ayah number\n3. Send your voice recording\n4. Get instant feedback!"
+  help.message: "📖 Available commands:\n/start - Start using the bot\n/newrecord - Create a new recording\n/myrecords - View your recordings\n/language - Change language\n/help - Show this help message\n\nHow to use:\n1. Use /newrecord or /start\n2. Select a Surah\n3. Enter the Ayah number\n4. Send your voice recording\n5. Get instant AI-powered feedback!\n\nYou can check all your recordings anytime with /myrecords"
 
   surah.select: "Please select a Surah:"
   ayah.select: "You selected: %s\n\nThis Surah has %d ayahs.\nPlease enter the ayah number (or type it directly):"
   ayah.enter_number: "Enter ayah number using the keyboard below, or type it directly:"
   ayah.cleared: "Number cleared. Please enter the ayah number again."
 
-  recording.prompt: "📱 Now, please send your voice recording of the ayah.\n\nNote: The recording should be in WAV format for best results."
-  recording.processing: "⏳ Processing your recording..."
-  recording.note_wav: "<b>Note:</b> Telegram voice messages are in OGG format. For best results, please send a WAV audio file as a document.\n\nWe'll process your recording and provide feedback shortly."
+  recording.prompt: "📱 Now, please send your voice recording of the ayah.\n\nNote: Voice messages will be automatically converted to the required format."
+  recording.processing: "⏳ Processing your recording... This may take a few seconds."
+  recording.submitted: "✅ Recording submitted successfully!\n\nRecording ID: %s\n\nYour recording is being analyzed. You can check its status at any time."
+  recording.what_next: "What would you like to do next?"
+  recording.check_status: "🔍 Check Status"
+  recording.new: "➕ New Recording"
+  recording.refresh: "🔄 Refresh"
   recording.complete: "Recording received! You can start a new recording by selecting another Surah."
   recording.wer: "Word Error Rate"
-  recording.analysis: "📊 Analysis (word by word):"
+  recording.analysis: "Word-by-word Analysis"
+  recording.details: "📋 Recording Details"
+  recording.created: "Created"
+  recording.status: "Status"
+  recording.results: "📊 Results"
+  recording.transcription: "Transcription"
+  recording.more_words: "more words"
+  recordings.title: "📚 My Recordings"
+  recordings.total: "Total"
+  recordings.empty: "You don't have any recordings yet. Use /newrecord to create your first recording!"
 
   language.select: "Please select your preferred language:"
   language.changed: "✅ Language changed successfully!"
@@ -28,6 +41,9 @@ messages:
   error.invalid_ayah: "❌ Invalid ayah number. Please enter a valid number."
   error.unexpected_voice: "❌ Please select a Surah and Ayah first before sending a recording."
   error.download_failed: "❌ Failed to download your voice message. Please try again."
+  error.audio_conversion: "❌ Failed to convert audio format. Please try sending your recording again."
+  error.recording_failed: "❌ Failed to submit recording to API. Please try again later."
+  error.recording_not_found: "❌ Recording not found."
 
 surahs:
   - Al-Fatihah

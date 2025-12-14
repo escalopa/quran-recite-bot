@@ -8,6 +8,9 @@ A Telegram bot that helps users practice Quran recitation by analyzing their voi
 - 🌍 **Multi-language**: Supports English, Arabic, and Russian
 - 🎯 **AI-Powered Analysis**: Get instant feedback on your recitation
 - 📊 **Detailed Results**: Word-by-word analysis with operation codes (Correct, Substitution, Deletion, Insertion)
+- 🎙️ **Auto Audio Conversion**: Automatically converts Telegram voice messages (OGG) to WAV using FFmpeg
+- 📚 **Recording History**: View and manage all your recordings with paginated lists
+- 🔍 **Status Tracking**: Check the analysis status of your recordings in real-time
 - 💾 **State Management**: Uses Redis FSM to track user progress
 - 🎨 **User-friendly Interface**: Interactive keyboards for easy navigation
 - 🐳 **Docker Support**: Easy deployment with Docker Compose
@@ -16,7 +19,7 @@ A Telegram bot that helps users practice Quran recitation by analyzing their voi
 
 The project follows **Clean Architecture** and **Hexagonal Architecture** principles:
 
-```
+```bash
 ├── cmd/bot/              # Application entry point
 ├── internal/
 │   ├── domain/          # Core business logic (entities, interfaces)
@@ -31,7 +34,8 @@ The project follows **Clean Architecture** and **Hexagonal Architecture** princi
 └── docker/              # Docker configuration
 ```
 
-### Layers:
+### Layers
+
 - **Domain**: Pure business logic, no dependencies on frameworks
 - **Application**: Use cases that orchestrate domain logic
 - **Adapter**: Implementations of external interfaces (Telegram, Redis, API)
@@ -42,6 +46,7 @@ The project follows **Clean Architecture** and **Hexagonal Architecture** princi
 
 - Go 1.21 or higher
 - Redis (for local development)
+- FFmpeg (for audio conversion)
 - Docker and Docker Compose (for containerized deployment)
 - Telegram Bot Token (from [@BotFather](https://t.me/botfather))
 - Quran API access (endpoint and API key)
@@ -49,12 +54,14 @@ The project follows **Clean Architecture** and **Hexagonal Architecture** princi
 ### Local Development
 
 1. **Clone the repository**
+
    ```bash
    git clone https://github.com/escalopa/quran-read-bot.git
    cd quran-read-bot
    ```
 
 2. **Install dependencies**
+
    ```bash
    go mod download
    ```
@@ -62,11 +69,13 @@ The project follows **Clean Architecture** and **Hexagonal Architecture** princi
 3. **Configure the bot**
 
    Create `config.yaml` from the example:
+
    ```bash
    cp config.example.yaml config.yaml
    ```
 
    Edit `config.yaml` and fill in your credentials:
+
    ```yaml
    telegram:
      token: "YOUR_TELEGRAM_BOT_TOKEN"
@@ -85,12 +94,29 @@ The project follows **Clean Architecture** and **Hexagonal Architecture** princi
      default_language: "en"
    ```
 
-4. **Start Redis**
+4. **Install FFmpeg** (for audio conversion)
+
+   **macOS:**
+   ```bash
+   brew install ffmpeg
+   ```
+
+   **Ubuntu/Debian:**
+   ```bash
+   sudo apt update && sudo apt install -y ffmpeg
+   ```
+
+   **Windows:**
+   Download from [ffmpeg.org](https://ffmpeg.org/download.html)
+
+5. **Start Redis**
+
    ```bash
    docker run -d -p 6379:6379 redis:7-alpine
    ```
 
-5. **Run the bot**
+6. **Run the bot**
+
    ```bash
    make run
    # or
@@ -100,11 +126,13 @@ The project follows **Clean Architecture** and **Hexagonal Architecture** princi
 ### Docker Deployment
 
 1. **Create environment file**
+
    ```bash
    cp .env.example .env
    ```
 
    Edit `.env` with your credentials:
+
    ```env
    TELEGRAM_TOKEN=your_bot_token
    QURAN_API_URL=https://quran.namaz.live
@@ -112,34 +140,48 @@ The project follows **Clean Architecture** and **Hexagonal Architecture** princi
    ```
 
 2. **Start services**
+
    ```bash
    docker-compose up -d
    ```
 
 3. **View logs**
+
    ```bash
    docker-compose logs -f bot
    ```
 
 4. **Stop services**
+
    ```bash
    docker-compose down
    ```
 
 ## 📱 Usage
 
-1. **Start the bot**: Send `/start` to your bot in Telegram
-2. **Select language**: Choose your preferred language
-3. **Choose Surah**: Browse and select a Surah from the list
-4. **Enter Ayah number**: Type the verse number you want to practice
-5. **Record**: Send your voice recording
-6. **Get feedback**: Receive detailed analysis of your recitation
+1. **Start the bot**: Send `/start` or `/newrecord` to your bot in Telegram
+2. **Select language**: Choose your preferred language (first time only)
+3. **Choose Surah**: Browse and select a Surah from the paginated list
+4. **Enter Ayah number**: Use the digit keyboard or type the verse number
+5. **Record**: Send your voice recording (automatically converted from OGG to WAV)
+6. **Get feedback**: Receive detailed AI-powered analysis of your recitation
+7. **View history**: Use `/myrecords` to see all your recordings
 
 ### Commands
 
 - `/start` - Start the bot and select a Surah
+- `/newrecord` - Create a new recording
+- `/myrecords` - View your recording history with pagination
 - `/language` - Change the interface language
 - `/help` - Display help information
+
+### Recording Management
+
+- View all recordings with status indicators (⏳ Processing, ✅ Done, ❌ Failed)
+- Click on any recording to see detailed results
+- Refresh recording status to check if analysis is complete
+- Navigate through recordings with Previous/Next buttons
+- Create new recordings directly from any screen
 
 ## 🔧 Configuration
 
@@ -167,6 +209,7 @@ The bot supports multiple languages. Translation files are located in the `local
 - `ru.yaml` - Russian (Русский)
 
 To add a new language:
+
 1. Create a new YAML file in `locales/` (e.g., `fr.yaml`)
 2. Copy the structure from an existing file
 3. Translate all message keys
@@ -176,17 +219,21 @@ To add a new language:
 
 The bot integrates with the Quran Reading API (`quran.namaz.live`):
 
-### Endpoints Used:
+### Endpoints Used
+
 - `POST /recordings` - Submit voice recording for analysis
 - `GET /recordings` - Retrieve recording results
 - `GET /recordings/{learner_id}` - List user's recordings
 
-### Audio Format:
-- The API requires **WAV** format
-- Telegram voice messages are in **OGG** format
-- Consider using FFmpeg for audio conversion in production
+### Audio Format
 
-### Response Format:
+- The API requires **WAV** format (16kHz, mono)
+- Telegram voice messages are in **OGG** format
+- The bot automatically converts OGG to WAV using FFmpeg
+- Conversion parameters: `-ar 16000 -ac 1` (16kHz sample rate, mono channel)
+
+### Response Format
+
 ```json
 {
   "recording_id": "uuid",
@@ -281,6 +328,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 📞 Support
 
 For questions or issues:
+
 - Open an issue on GitHub
 - Contact: [Your contact information]
 

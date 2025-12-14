@@ -12,10 +12,11 @@ import (
 )
 
 type Bot struct {
-	api     *tgbotapi.BotAPI
-	service *application.BotService
-	i18n    domain.I18nPort
-	cancel  context.CancelFunc
+	api      *tgbotapi.BotAPI
+	service  *application.BotService
+	i18n     domain.I18nPort
+	commands map[string]CommandHandler
+	cancel   context.CancelFunc
 }
 
 func NewBot(token string, service *application.BotService, i18n domain.I18nPort) (*Bot, error) {
@@ -24,11 +25,17 @@ func NewBot(token string, service *application.BotService, i18n domain.I18nPort)
 		return nil, fmt.Errorf("create bot: %w", err)
 	}
 
-	return &Bot{
-		api:     api,
-		service: service,
-		i18n:    i18n,
-	}, nil
+	bot := &Bot{
+		api:      api,
+		service:  service,
+		i18n:     i18n,
+		commands: make(map[string]CommandHandler),
+	}
+
+	// Register commands
+	bot.registerCommands()
+
+	return bot, nil
 }
 
 func (b *Bot) Start(ctx context.Context) error {
@@ -94,32 +101,15 @@ func (b *Bot) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 }
 
 func (b *Bot) handleCommand(ctx context.Context, msg *tgbotapi.Message, lang domain.Language) {
-	userID := strconv.FormatInt(msg.From.ID, 10)
+	cmd := msg.Command()
 
-	switch msg.Command() {
-	case "start":
-		b.handleStart(ctx, msg.Chat.ID, userID, lang)
-	case "help":
-		b.sendMessage(msg.Chat.ID, b.i18n.Get(lang, "help.message"))
-	case "language":
-		b.sendLanguageSelection(msg.Chat.ID, lang)
-	default:
+	handler, exists := b.commands[cmd]
+	if !exists {
 		b.sendMessage(msg.Chat.ID, b.i18n.Get(lang, "error.unknown_command"))
-	}
-}
-
-func (b *Bot) handleStart(ctx context.Context, chatID int64, userID string, lang domain.Language) {
-	if err := b.service.HandleStart(ctx, userID, lang); err != nil {
-		log.Printf("Error handling start: %v", err)
-		b.sendMessage(chatID, b.i18n.Get(lang, "error.generic"))
 		return
 	}
 
-	// Send welcome message
-	b.sendMessage(chatID, b.i18n.Get(lang, "welcome.message"))
-
-	// Show surah selection
-	b.sendSurahSelection(ctx, chatID, userID, lang, 0)
+	handler(ctx, msg)
 }
 
 func (b *Bot) handleCallback(ctx context.Context, callback *tgbotapi.CallbackQuery, lang domain.Language) {
@@ -147,7 +137,7 @@ func (b *Bot) handleCallback(ctx context.Context, callback *tgbotapi.CallbackQue
 	// Handle surah page navigation
 	if len(data) > 6 && data[:6] == "spage:" {
 		page, _ := strconv.Atoi(data[6:])
-		b.sendSurahSelection(ctx, chatID, userID, lang, page)
+		b.editSurahSelection(ctx, callback.Message, userID, lang, page)
 		return
 	}
 
@@ -155,13 +145,13 @@ func (b *Bot) handleCallback(ctx context.Context, callback *tgbotapi.CallbackQue
 	if len(data) > 6 && data[:6] == "surah:" {
 		surahNum, err := strconv.Atoi(data[6:])
 		if err != nil {
-			b.sendMessage(chatID, b.i18n.Get(lang, "error.invalid_input"))
+			b.answerCallbackAlert(callback.ID, b.i18n.Get(lang, "error.invalid_input"))
 			return
 		}
 
 		if err := b.service.HandleSurahSelection(ctx, userID, surahNum); err != nil {
 			log.Printf("Error selecting surah: %v", err)
-			b.sendMessage(chatID, b.i18n.Get(lang, "error.generic"))
+			b.answerCallbackAlert(callback.ID, b.i18n.Get(lang, "error.generic"))
 			return
 		}
 
@@ -170,31 +160,82 @@ func (b *Bot) handleCallback(ctx context.Context, callback *tgbotapi.CallbackQue
 		surah := surahs[surahNum-1]
 		surahName := b.i18n.GetSurahName(lang, surahNum)
 
-		// Send ayah number keyboard
+		// Clear any previous ayah input
+		b.service.ClearAyahInput(ctx, userID)
+
+		// Edit the message to show ayah selection
 		msg := b.i18n.Get(lang, "ayah.select", surahName, surah.Ayahs)
-		b.sendMessage(chatID, msg)
-		b.sendAyahKeyboard(chatID, lang)
+		b.editMessageWithKeyboard(callback.Message, msg, b.getAyahKeyboard(lang, ""))
 		return
 	}
 
 	// Handle digit input
 	if len(data) > 6 && data[:6] == "digit:" {
-		b.handleDigitInput(ctx, chatID, userID, lang, data[6:])
+		b.handleDigitInput(ctx, callback.Message, userID, lang, data[6:])
 		return
 	}
 
 	// Handle clear/backspace
 	if data == "clear" {
-		// Just inform the user
-		b.sendMessage(chatID, b.i18n.Get(lang, "ayah.cleared"))
+		b.handleClearDigit(ctx, callback.Message, userID, lang)
 		return
 	}
 
 	// Handle done (when ayah number is entered)
 	if data == "done" {
-		// State will be updated when user sends voice
-		msg := b.i18n.Get(lang, "recording.prompt")
-		b.sendMessage(chatID, msg)
+		b.handleAyahDone(ctx, callback.Message, userID, lang)
+		return
+	}
+
+	// Handle check recording status
+	if len(data) > 6 && data[:6] == "check:" {
+		recordingID := data[6:]
+		b.handleCheckRecording(ctx, callback.Message, userID, lang, recordingID)
+		return
+	}
+
+	// Handle new recording button
+	if data == "newrecord" {
+		chatID := callback.Message.Chat.ID
+		if err := b.service.HandleStart(ctx, userID, lang); err != nil {
+			log.Printf("Error handling start: %v", err)
+			return
+		}
+		// Delete the previous message
+		deleteMsg := tgbotapi.NewDeleteMessage(chatID, callback.Message.MessageID)
+		b.api.Send(deleteMsg)
+		// Show surah selection
+		b.sendSurahSelection(ctx, chatID, userID, lang, 0)
+		return
+	}
+
+	// Handle recording list navigation
+	if len(data) > 8 && data[:8] == "recpage:" {
+		page, _ := strconv.Atoi(data[8:])
+		recordings, err := b.service.ListRecordings(ctx, userID, 50)
+		if err != nil {
+			log.Printf("Error listing recordings: %v", err)
+			return
+		}
+		b.editRecordingsList(callback.Message, userID, lang, recordings, page)
+		return
+	}
+
+	// Handle view recording details
+	if len(data) > 8 && data[:8] == "viewrec:" {
+		recordingID := data[8:]
+		b.handleViewRecording(ctx, callback.Message, userID, lang, recordingID)
+		return
+	}
+
+	// Handle back to recordings list
+	if data == "backtorecs" {
+		recordings, err := b.service.ListRecordings(ctx, userID, 50)
+		if err != nil {
+			log.Printf("Error listing recordings: %v", err)
+			return
+		}
+		b.editRecordingsList(callback.Message, userID, lang, recordings, 0)
 		return
 	}
 }
@@ -236,38 +277,166 @@ func (b *Bot) handleVoice(ctx context.Context, msg *tgbotapi.Message, lang domai
 		return
 	}
 
-	// Download voice file
-	fileConfig := tgbotapi.FileConfig{FileID: msg.Voice.FileID}
-	file, err := b.api.GetFile(fileConfig)
+	// Send processing message
+	b.sendMessage(chatID, b.i18n.Get(lang, "recording.processing"))
+
+	// Process voice message (download and convert to WAV)
+	audioReader, err := b.processVoiceMessage(msg.Voice.FileID)
 	if err != nil {
-		log.Printf("Error getting file: %v", err)
-		b.sendMessage(chatID, b.i18n.Get(lang, "error.download_failed"))
+		log.Printf("Error processing voice message: %v", err)
+		b.sendMessage(chatID, b.i18n.Get(lang, "error.audio_conversion"))
 		return
 	}
 
-	// Get file URL
-	fileURL := file.Link(b.api.Token)
+	// Submit recording to API
+	recording, err := b.service.HandleRecording(ctx, userID, audioReader)
+	if err != nil {
+		log.Printf("Error handling recording: %v", err)
+		b.sendMessage(chatID, b.i18n.Get(lang, "error.recording_failed"))
+		return
+	}
 
-	// Download and convert to WAV (for now, we'll send a message about processing)
-	// In production, you'd want to download the file and convert it to WAV format
-	b.sendMessage(chatID, b.i18n.Get(lang, "recording.processing"))
+	// Send success message with recording ID
+	successMsg := b.i18n.Get(lang, "recording.submitted", recording.ID)
+	b.sendMessage(chatID, successMsg)
 
-	// For demo purposes, show that we would process it
-	// In real implementation, download the file, convert to WAV, and submit
-	_ = fileURL // Use this to download the file
+	// Offer to check status or create new recording
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(
+				b.i18n.Get(lang, "recording.check_status"),
+				fmt.Sprintf("check:%s", recording.ID),
+			),
+			tgbotapi.NewInlineKeyboardButtonData(
+				b.i18n.Get(lang, "recording.new"),
+				"newrecord",
+			),
+		),
+	)
 
-	msg2 := tgbotapi.NewMessage(chatID, b.i18n.Get(lang, "recording.note_wav"))
-	msg2.ParseMode = "HTML"
-	b.api.Send(msg2)
-
-	// Reset to start
-	b.sendMessage(chatID, b.i18n.Get(lang, "recording.complete"))
-	b.handleStart(ctx, chatID, userID, lang)
+	replyMsg := tgbotapi.NewMessage(chatID, b.i18n.Get(lang, "recording.what_next"))
+	replyMsg.ReplyMarkup = keyboard
+	b.api.Send(replyMsg)
 }
 
-func (b *Bot) handleDigitInput(ctx context.Context, chatID int64, userID string, lang domain.Language, digit string) {
-	// For simplicity, we'll handle direct text input instead
-	// This is a placeholder for the digit keyboard interaction
+func (b *Bot) handleDigitInput(ctx context.Context, msg *tgbotapi.Message, userID string, lang domain.Language, digit string) {
+	// Get current input
+	currentInput := b.service.GetAyahInput(ctx, userID)
+
+	// Append digit (limit to 3 digits for ayah number)
+	if len(currentInput) < 3 {
+		currentInput += digit
+		if err := b.service.SetAyahInput(ctx, userID, currentInput); err != nil {
+			log.Printf("Error setting ayah input: %v", err)
+			return
+		}
+	}
+
+	// Get selected surah info
+	surahNum, err := b.service.GetSelectedSurah(ctx, userID)
+	if err != nil {
+		log.Printf("Error getting selected surah: %v", err)
+		return
+	}
+
+	surahs := b.service.GetAllSurahs()
+	if surahNum < 1 || surahNum > len(surahs) {
+		return
+	}
+	surah := surahs[surahNum-1]
+	surahName := b.i18n.GetSurahName(lang, surahNum)
+
+	// Update message with current input
+	text := b.i18n.Get(lang, "ayah.select", surahName, surah.Ayahs)
+	if currentInput != "" {
+		text += fmt.Sprintf("\n\n📝 %s", currentInput)
+	}
+
+	b.editMessageWithKeyboard(msg, text, b.getAyahKeyboard(lang, currentInput))
+}
+
+func (b *Bot) handleClearDigit(ctx context.Context, msg *tgbotapi.Message, userID string, lang domain.Language) {
+	// Get current input
+	currentInput := b.service.GetAyahInput(ctx, userID)
+
+	// Remove last digit
+	if len(currentInput) > 0 {
+		currentInput = currentInput[:len(currentInput)-1]
+		if err := b.service.SetAyahInput(ctx, userID, currentInput); err != nil {
+			log.Printf("Error setting ayah input: %v", err)
+			return
+		}
+	}
+
+	// Get selected surah info
+	surahNum, err := b.service.GetSelectedSurah(ctx, userID)
+	if err != nil {
+		log.Printf("Error getting selected surah: %v", err)
+		return
+	}
+
+	surahs := b.service.GetAllSurahs()
+	if surahNum < 1 || surahNum > len(surahs) {
+		return
+	}
+	surah := surahs[surahNum-1]
+	surahName := b.i18n.GetSurahName(lang, surahNum)
+
+	// Update message with current input
+	text := b.i18n.Get(lang, "ayah.select", surahName, surah.Ayahs)
+	if currentInput != "" {
+		text += fmt.Sprintf("\n\n📝 %s", currentInput)
+	}
+
+	b.editMessageWithKeyboard(msg, text, b.getAyahKeyboard(lang, currentInput))
+}
+
+func (b *Bot) handleAyahDone(ctx context.Context, msg *tgbotapi.Message, userID string, lang domain.Language) {
+	chatID := msg.Chat.ID
+
+	// Get accumulated input
+	ayahInput := b.service.GetAyahInput(ctx, userID)
+
+	if ayahInput == "" {
+		// Edit message to show error
+		surahNum, _ := b.service.GetSelectedSurah(ctx, userID)
+		surahs := b.service.GetAllSurahs()
+		if surahNum >= 1 && surahNum <= len(surahs) {
+			surah := surahs[surahNum-1]
+			surahName := b.i18n.GetSurahName(lang, surahNum)
+			text := b.i18n.Get(lang, "ayah.select", surahName, surah.Ayahs)
+			text += "\n\n⚠️ " + b.i18n.Get(lang, "error.invalid_ayah")
+			b.editMessageWithKeyboard(msg, text, b.getAyahKeyboard(lang, ""))
+		}
+		return
+	}
+
+	// Process ayah number
+	if err := b.service.HandleAyahInput(ctx, userID, ayahInput); err != nil {
+		log.Printf("Error handling ayah input: %v", err)
+
+		// Edit message to show error
+		surahNum, _ := b.service.GetSelectedSurah(ctx, userID)
+		surahs := b.service.GetAllSurahs()
+		if surahNum >= 1 && surahNum <= len(surahs) {
+			surah := surahs[surahNum-1]
+			surahName := b.i18n.GetSurahName(lang, surahNum)
+			text := b.i18n.Get(lang, "ayah.select", surahName, surah.Ayahs)
+			text += "\n\n⚠️ " + b.i18n.Get(lang, "error.invalid_ayah")
+			b.editMessageWithKeyboard(msg, text, b.getAyahKeyboard(lang, ayahInput))
+		}
+		return
+	}
+
+	// Clear input after successful submission
+	b.service.ClearAyahInput(ctx, userID)
+
+	// Delete the keyboard message
+	deleteMsg := tgbotapi.NewDeleteMessage(chatID, msg.MessageID)
+	b.api.Send(deleteMsg)
+
+	// Send prompt for recording
+	b.sendMessage(chatID, b.i18n.Get(lang, "recording.prompt"))
 }
 
 func (b *Bot) sendMessage(chatID int64, text string) {
@@ -292,6 +461,18 @@ func (b *Bot) sendLanguageSelection(chatID int64, currentLang domain.Language) {
 }
 
 func (b *Bot) sendSurahSelection(ctx context.Context, chatID int64, userID string, lang domain.Language, page int) {
+	keyboard := b.getSurahKeyboard(lang, page)
+	msg := tgbotapi.NewMessage(chatID, b.i18n.Get(lang, "surah.select"))
+	msg.ReplyMarkup = keyboard
+	b.api.Send(msg)
+}
+
+func (b *Bot) editSurahSelection(ctx context.Context, msg *tgbotapi.Message, userID string, lang domain.Language, page int) {
+	keyboard := b.getSurahKeyboard(lang, page)
+	b.editMessageWithKeyboard(msg, b.i18n.Get(lang, "surah.select"), keyboard)
+}
+
+func (b *Bot) getSurahKeyboard(lang domain.Language, page int) tgbotapi.InlineKeyboardMarkup {
 	surahs := b.service.GetAllSurahs()
 
 	const itemsPerPage = 10
@@ -350,15 +531,12 @@ func (b *Bot) sendSurahSelection(ctx context.Context, chatID int64, userID strin
 		rows = append(rows, navRow)
 	}
 
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(rows...)
-	msg := tgbotapi.NewMessage(chatID, b.i18n.Get(lang, "surah.select"))
-	msg.ReplyMarkup = keyboard
-	b.api.Send(msg)
+	return tgbotapi.NewInlineKeyboardMarkup(rows...)
 }
 
-func (b *Bot) sendAyahKeyboard(chatID int64, lang domain.Language) {
+func (b *Bot) getAyahKeyboard(lang domain.Language, currentInput string) tgbotapi.InlineKeyboardMarkup {
 	// Telephone-style number keyboard (3x3 + bottom row)
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("1", "digit:1"),
 			tgbotapi.NewInlineKeyboardButtonData("2", "digit:2"),
@@ -380,10 +558,21 @@ func (b *Bot) sendAyahKeyboard(chatID int64, lang domain.Language) {
 			tgbotapi.NewInlineKeyboardButtonData("✅ "+b.i18n.Get(lang, "nav.done"), "done"),
 		),
 	)
+}
 
-	msg := tgbotapi.NewMessage(chatID, b.i18n.Get(lang, "ayah.enter_number"))
-	msg.ReplyMarkup = keyboard
-	b.api.Send(msg)
+func (b *Bot) editMessageWithKeyboard(msg *tgbotapi.Message, text string, keyboard tgbotapi.InlineKeyboardMarkup) {
+	edit := tgbotapi.NewEditMessageText(msg.Chat.ID, msg.MessageID, text)
+	edit.ReplyMarkup = &keyboard
+	if _, err := b.api.Send(edit); err != nil {
+		log.Printf("Error editing message: %v", err)
+	}
+}
+
+func (b *Bot) answerCallbackAlert(callbackID, text string) {
+	callback := tgbotapi.NewCallbackWithAlert(callbackID, text)
+	if _, err := b.api.Request(callback); err != nil {
+		log.Printf("Error answering callback: %v", err)
+	}
 }
 
 func (b *Bot) getUserID(update tgbotapi.Update) string {

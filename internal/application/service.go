@@ -198,3 +198,32 @@ func (s *BotService) GetSelectedSurah(ctx context.Context, userID string) (int, 
 func (s *BotService) GetAllSurahs() []domain.Surah {
 	return domain.GetAllSurahs()
 }
+
+// GetAyahInput gets the accumulated ayah input for a user
+func (s *BotService) GetAyahInput(ctx context.Context, userID string) string {
+	input, err := s.fsm.GetData(ctx, userID, domain.SessionKeyAyahInput)
+	if err != nil {
+		return ""
+	}
+	return input
+}
+
+// SetAyahInput sets the accumulated ayah input for a user
+func (s *BotService) SetAyahInput(ctx context.Context, userID, input string) error {
+	return s.fsm.SetData(ctx, userID, domain.SessionKeyAyahInput, input)
+}
+
+// ClearAyahInput clears the accumulated ayah input for a user
+func (s *BotService) ClearAyahInput(ctx context.Context, userID string) error {
+	return s.fsm.DeleteData(ctx, userID, domain.SessionKeyAyahInput)
+}
+
+// GetRecording retrieves a specific recording by ID
+func (s *BotService) GetRecording(ctx context.Context, userID, recordingID string) (*domain.Recording, error) {
+	return s.quranAPI.GetRecording(ctx, userID, recordingID)
+}
+
+// ListRecordings retrieves all recordings for a user
+func (s *BotService) ListRecordings(ctx context.Context, userID string, limit int) ([]*domain.Recording, error) {
+	return s.quranAPI.ListRecordings(ctx, userID, limit)
+}
