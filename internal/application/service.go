@@ -141,6 +141,34 @@ func (s *BotService) HandleRecording(ctx context.Context, userID string, audioFi
 	return recording, nil
 }
 
+// HandleAutoDetectRecording handles when a user sends a voice recording for auto-detection
+func (s *BotService) HandleAutoDetectRecording(ctx context.Context, userID string, audioFile io.Reader) (*domain.Recording, error) {
+	// Get optional expected starting ayah (if user provided a hint)
+	expectedStartAyahID, _ := s.fsm.GetData(ctx, userID, "expected_start_ayah")
+
+	// Submit recording to API for auto-detection
+	recording, err := s.quranAPI.SubmitAutoDetect(ctx, userID, audioFile, expectedStartAyahID, 0)
+	if err != nil {
+		return nil, fmt.Errorf("submit auto-detect recording: %w", err)
+	}
+
+	// Reset state to allow new recording
+	if err := s.fsm.SetState(ctx, userID, domain.StateSelectSurah); err != nil {
+		return nil, fmt.Errorf("reset state: %w", err)
+	}
+
+	return recording, nil
+}
+
+// StartAutoDetectMode sets the user to auto-detect mode
+func (s *BotService) StartAutoDetectMode(ctx context.Context, userID string) error {
+	// Set state to wait for auto-detect recording
+	if err := s.fsm.SetState(ctx, userID, domain.StateWaitAutoDetect); err != nil {
+		return fmt.Errorf("set state: %w", err)
+	}
+	return nil
+}
+
 // GetUserLanguage retrieves the user's preferred language
 func (s *BotService) GetUserLanguage(ctx context.Context, userID string) domain.Language {
 	langStr, err := s.fsm.GetData(ctx, userID, domain.SessionKeyLanguage)

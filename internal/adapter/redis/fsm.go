@@ -19,12 +19,13 @@ type FSM struct {
 	client *redis.Client
 }
 
-func NewFSM(addr, password string, db int) (*FSM, error) {
-	client := redis.NewClient(&redis.Options{
-		Addr:     addr,
-		Password: password,
-		DB:       db,
-	})
+func NewFSM(uri string) (*FSM, error) {
+	opts, err := redis.ParseURL(uri)
+	if err != nil {
+		return nil, fmt.Errorf("parse redis URI: %w", err)
+	}
+
+	client := redis.NewClient(opts)
 
 	// Test connection
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

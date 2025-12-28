@@ -186,11 +186,32 @@ func (b *Bot) formatRecordingDetails(lang domain.Language, recording *domain.Rec
 	text.WriteString(fmt.Sprintf("<b>%s</b>\n\n", b.i18n.Get(lang, "recording.details")))
 	text.WriteString(fmt.Sprintf("🆔 ID: <code>%s</code>\n", recording.ID))
 
-	// Parse and format ayah ID to be more readable
-	surahNum, ayahNum := b.parseAyahID(recording.AyahID)
-	surahName := b.i18n.GetSurahName(lang, surahNum)
-	text.WriteString(fmt.Sprintf("📖 Surah: <b>%s</b>\n", surahName))
-	text.WriteString(fmt.Sprintf("📄 %s: <b>%d</b>\n", b.i18n.Get(lang, "ayah.ayah"), ayahNum))
+	// Check if this is an auto-detect recording
+	isAutoDetect := recording.Result != nil && recording.Result.DetectionMethod != ""
+
+	if isAutoDetect && recording.Result.Status == "matched" {
+		// Auto-detect result - show detected ayahs
+		text.WriteString(fmt.Sprintf("🔍 Mode: <b>Auto-Detect (%s)</b>\n", recording.Result.DetectionConfidence))
+
+		if recording.Result.DetectedRange != nil {
+			text.WriteString(fmt.Sprintf("📖 Detected: <b>Ayah %s", recording.Result.DetectedRange.StartAyah))
+			if recording.Result.DetectedRange.StartAyah != recording.Result.DetectedRange.EndAyah {
+				text.WriteString(fmt.Sprintf(" - %s", recording.Result.DetectedRange.EndAyah))
+			}
+			text.WriteString(fmt.Sprintf("</b> (%d ayah", recording.Result.DetectedRange.TotalAyahs))
+			if recording.Result.DetectedRange.TotalAyahs > 1 {
+				text.WriteString("s")
+			}
+			text.WriteString(")\n")
+		}
+	} else if recording.AyahID != "" {
+		// Manual mode - show specified ayah
+		surahNum, ayahNum := b.parseAyahID(recording.AyahID)
+		surahName := b.i18n.GetSurahName(lang, surahNum)
+		text.WriteString(fmt.Sprintf("📖 Surah: <b>%s</b>\n", surahName))
+		text.WriteString(fmt.Sprintf("📄 %s: <b>%d</b>\n", b.i18n.Get(lang, "ayah.ayah"), ayahNum))
+	}
+
 	text.WriteString(fmt.Sprintf("📅 %s: %s\n",
 		b.i18n.Get(lang, "recording.created"),
 		recording.CreatedAt.Format(time.RFC822),
@@ -203,31 +224,88 @@ func (b *Bot) formatRecordingDetails(lang domain.Language, recording *domain.Rec
 
 	// Show results if available
 	if recording.Result != nil {
-		text.WriteString(fmt.Sprintf("<b>%s</b>\n", b.i18n.Get(lang, "recording.results")))
-		text.WriteString(fmt.Sprintf("📊 WER: <b>%.2f%%</b>\n\n", recording.Result.WER*100))
+		if recording.Result.Status == "no_match" {
+			// Auto-detect failed
+			text.WriteString("<b>❌ No Match Found</b>\n\n")
+			text.WriteString(fmt.Sprintf("Error: %s\n", recording.Result.Error))
+			if recording.Result.Suggestion != "" {
+				text.WriteString(fmt.Sprintf("💡 Suggestion: %s\n", recording.Result.Suggestion))
+			}
+		} else if recording.Result.Status == "matched" {
+			// Auto-detect succeeded - show statistics
+			text.WriteString(fmt.Sprintf("<b>%s</b>\n", b.i18n.Get(lang, "recording.results")))
 
-		if len(recording.Result.Ops) > 0 {
-			text.WriteString(fmt.Sprintf("<b>%s:</b>\n", b.i18n.Get(lang, "recording.analysis")))
-			for i, op := range recording.Result.Ops {
-				if i >= 20 { // Limit to first 20 words
-					text.WriteString(fmt.Sprintf("\n... (%d %s)\n",
-						len(recording.Result.Ops)-20,
-						b.i18n.Get(lang, "recording.more_words"),
-					))
-					break
+			if recording.Result.OverallStatistics != nil {
+				stats := recording.Result.OverallStatistics
+				text.WriteString(fmt.Sprintf("📊 Accuracy: <b>%.1f%%</b>\n", stats.Accuracy*100))
+				text.WriteString(fmt.Sprintf("📊 WER: <b>%.1f%%</b>\n", stats.WER*100))
+				text.WriteString(fmt.Sprintf("✅ Correct: %d/%d words\n", stats.Correct, stats.TotalWords))
+				if stats.Substitutions > 0 {
+					text.WriteString(fmt.Sprintf("🔄 Substitutions: %d\n", stats.Substitutions))
 				}
-				emoji := b.getOpEmoji(op.Op)
-				text.WriteString(fmt.Sprintf("%s <code>%s</code>\n", emoji, op.RefAr))
+				if stats.Deletions > 0 {
+					text.WriteString(fmt.Sprintf("❌ Deletions: %d\n", stats.Deletions))
+				}
+				if stats.Insertions > 0 {
+					text.WriteString(fmt.Sprintf("➕ Insertions: %d\n", stats.Insertions))
+				}
+				text.WriteString("\n")
+			}
+
+			// Show per-ayah results if available
+			if len(recording.Result.PerAyahResults) > 0 {
+				text.WriteString("<b>Per-Ayah Results:</b>\n")
+				for _, ayahResult := range recording.Result.PerAyahResults {
+					errorCount := len(ayahResult.Errors)
+					text.WriteString(fmt.Sprintf("📄 %s: %.1f%% WER",
+						ayahResult.AyahID,
+						ayahResult.WER*100))
+					if errorCount > 0 {
+						text.WriteString(fmt.Sprintf(" (%d error", errorCount))
+						if errorCount > 1 {
+							text.WriteString("s")
+						}
+						text.WriteString(")")
+					}
+					text.WriteString("\n")
+				}
+				text.WriteString("\n")
+			}
+
+			if recording.Result.Hypothesis != "" {
+				text.WriteString(fmt.Sprintf("<b>%s:</b>\n<code>%s</code>\n",
+					b.i18n.Get(lang, "recording.transcription"),
+					recording.Result.Hypothesis,
+				))
+			}
+		} else {
+			// Legacy format
+			text.WriteString(fmt.Sprintf("<b>%s</b>\n", b.i18n.Get(lang, "recording.results")))
+			text.WriteString(fmt.Sprintf("📊 WER: <b>%.2f%%</b>\n\n", recording.Result.WER*100))
+
+			if len(recording.Result.Ops) > 0 {
+				text.WriteString(fmt.Sprintf("<b>%s:</b>\n", b.i18n.Get(lang, "recording.analysis")))
+				for i, op := range recording.Result.Ops {
+					if i >= 20 { // Limit to first 20 words
+						text.WriteString(fmt.Sprintf("\n... (%d %s)\n",
+							len(recording.Result.Ops)-20,
+							b.i18n.Get(lang, "recording.more_words"),
+						))
+						break
+					}
+					emoji := b.getOpEmoji(op.Op)
+					text.WriteString(fmt.Sprintf("%s <code>%s</code>\n", emoji, op.RefAr))
+				}
+			}
+
+			if recording.Result.Hypothesis != "" {
+				text.WriteString(fmt.Sprintf("\n<b>%s:</b>\n<code>%s</code>\n",
+					b.i18n.Get(lang, "recording.transcription"),
+					recording.Result.Hypothesis,
+				))
 			}
 		}
-
-		if recording.Result.Hypothesis != "" {
-			text.WriteString(fmt.Sprintf("\n<b>%s:</b>\n<code>%s</code>\n",
-				b.i18n.Get(lang, "recording.transcription"),
-				recording.Result.Hypothesis,
-			))
-		}
-	} else if recording.Status == domain.StatusQueued {
+	} else if recording.Status == domain.StatusQueued || recording.Status == domain.StatusProcessing {
 		text.WriteString(fmt.Sprintf("⏳ %s\n", b.i18n.Get(lang, "recording.processing")))
 	}
 
@@ -239,6 +317,8 @@ func (b *Bot) getStatusEmoji(status domain.RecordingStatus) string {
 	switch status {
 	case domain.StatusQueued:
 		return "⏳"
+	case domain.StatusProcessing:
+		return "🔄"
 	case domain.StatusDone:
 		return "✅"
 	case domain.StatusFailed:

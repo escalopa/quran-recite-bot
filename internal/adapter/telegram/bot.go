@@ -238,6 +238,119 @@ func (b *Bot) handleCallback(ctx context.Context, callback *tgbotapi.CallbackQue
 		b.editRecordingsList(callback.Message, userID, lang, recordings, 0)
 		return
 	}
+
+	// Handle new auto-detect
+	if data == "new_autodetect" {
+		chatID := callback.Message.Chat.ID
+		if err := b.service.StartAutoDetectMode(ctx, userID); err != nil {
+			log.Printf("Error starting auto-detect mode: %v", err)
+			return
+		}
+
+		// Delete the previous message
+		deleteMsg := tgbotapi.NewDeleteMessage(chatID, callback.Message.MessageID)
+		b.api.Send(deleteMsg)
+
+		// Send auto-detect instructions
+		text := "🎤 <b>Auto-Detect Mode</b>\n\n"
+		text += "Send me a voice message and I'll detect which Ayah(s) you're reading!\n\n"
+		text += "🎙️ <b>Ready?</b> Send your voice message now!"
+
+		msgToSend := tgbotapi.NewMessage(chatID, text)
+		msgToSend.ParseMode = "HTML"
+		b.api.Send(msgToSend)
+		return
+	}
+
+	// Handle cancel auto-detect
+	if data == "cancel_autodetect" {
+		if err := b.service.HandleStart(ctx, userID, lang); err != nil {
+			log.Printf("Error cancelling auto-detect: %v", err)
+			return
+		}
+
+		chatID := callback.Message.Chat.ID
+		deleteMsg := tgbotapi.NewDeleteMessage(chatID, callback.Message.MessageID)
+		b.api.Send(deleteMsg)
+
+		b.sendMessage(chatID, "Auto-detect cancelled. Use /start or /newrecord to begin.")
+		return
+	}
+
+	// Handle mode selection - auto-detect
+	if data == "mode_autodetect" {
+		chatID := callback.Message.Chat.ID
+		if err := b.service.StartAutoDetectMode(ctx, userID); err != nil {
+			log.Printf("Error starting auto-detect mode: %v", err)
+			return
+		}
+
+		// Delete the previous message
+		deleteMsg := tgbotapi.NewDeleteMessage(chatID, callback.Message.MessageID)
+		b.api.Send(deleteMsg)
+
+		// Send auto-detect instructions
+		text := "🎤 <b>Auto-Detect Mode</b>\n\n"
+		text += "Just send me a voice message of your Quran recitation and I'll automatically detect which Ayah(s) you're reading!\n\n"
+		text += "📝 <b>Tips:</b>\n"
+		text += "• Speak clearly in a quiet environment\n"
+		text += "• Start from the beginning of an Ayah\n"
+		text += "• You can recite multiple consecutive Ayahs\n"
+		text += "• Processing takes 10-30 seconds\n\n"
+		text += "🎙️ <b>Ready?</b> Send your voice message now!"
+
+		keyboard := tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData(
+					"❌ Cancel",
+					"cancel_autodetect",
+				),
+			),
+		)
+
+		msgToSend := tgbotapi.NewMessage(chatID, text)
+		msgToSend.ParseMode = "HTML"
+		msgToSend.ReplyMarkup = keyboard
+		b.api.Send(msgToSend)
+		return
+	}
+
+	// Handle mode selection - manual
+	if data == "mode_manual" {
+		chatID := callback.Message.Chat.ID
+
+		// Delete the previous message
+		deleteMsg := tgbotapi.NewDeleteMessage(chatID, callback.Message.MessageID)
+		b.api.Send(deleteMsg)
+
+		// Show surah selection
+		b.sendSurahSelection(ctx, chatID, userID, lang, 0)
+		return
+	}
+
+	// Handle my recordings from start
+	if data == "myrecords_start" {
+		chatID := callback.Message.Chat.ID
+
+		recordings, err := b.service.ListRecordings(ctx, userID, 50)
+		if err != nil {
+			log.Printf("Error listing recordings: %v", err)
+			b.answerCallbackAlert(callback.ID, "Error loading recordings")
+			return
+		}
+
+		if len(recordings) == 0 {
+			b.answerCallbackAlert(callback.ID, "You don't have any recordings yet!")
+			return
+		}
+
+		// Delete the previous message
+		deleteMsg := tgbotapi.NewDeleteMessage(chatID, callback.Message.MessageID)
+		b.api.Send(deleteMsg)
+
+		b.sendRecordingsList(chatID, userID, lang, recordings, 0)
+		return
+	}
 }
 
 func (b *Bot) handleText(ctx context.Context, msg *tgbotapi.Message, lang domain.Language) {
@@ -272,7 +385,19 @@ func (b *Bot) handleVoice(ctx context.Context, msg *tgbotapi.Message, lang domai
 	chatID := msg.Chat.ID
 
 	state, err := b.service.GetCurrentState(ctx, userID)
-	if err != nil || state != domain.StateWaitRecording {
+	if err != nil {
+		b.sendMessage(chatID, b.i18n.Get(lang, "error.unexpected_voice"))
+		return
+	}
+
+	// Check if in auto-detect mode
+	if state == domain.StateWaitAutoDetect {
+		b.handleAutoDetectVoice(ctx, msg, lang)
+		return
+	}
+
+	// Regular manual mode
+	if state != domain.StateWaitRecording {
 		b.sendMessage(chatID, b.i18n.Get(lang, "error.unexpected_voice"))
 		return
 	}
@@ -315,6 +440,74 @@ func (b *Bot) handleVoice(ctx context.Context, msg *tgbotapi.Message, lang domai
 	)
 
 	replyMsg := tgbotapi.NewMessage(chatID, b.i18n.Get(lang, "recording.what_next"))
+	replyMsg.ReplyMarkup = keyboard
+	b.api.Send(replyMsg)
+}
+
+func (b *Bot) handleAutoDetectVoice(ctx context.Context, msg *tgbotapi.Message, lang domain.Language) {
+	userID := strconv.FormatInt(msg.From.ID, 10)
+	chatID := msg.Chat.ID
+
+	// Send processing message
+	processingText := "🔍 <b>Auto-Detecting...</b>\n\n"
+	processingText += "Processing your recording to identify which Ayah(s) you recited.\n"
+	processingText += "This may take 10-30 seconds..."
+
+	processingMsg := tgbotapi.NewMessage(chatID, processingText)
+	processingMsg.ParseMode = "HTML"
+	sent, err := b.api.Send(processingMsg)
+	if err != nil {
+		log.Printf("Error sending processing message: %v", err)
+	}
+
+	// Process voice message (download and convert to WAV)
+	audioReader, err := b.processVoiceMessage(msg.Voice.FileID)
+	if err != nil {
+		log.Printf("Error processing voice message: %v", err)
+		b.sendMessage(chatID, "❌ Error processing audio file. Please try again.")
+		return
+	}
+
+	// Submit recording to API for auto-detection
+	recording, err := b.service.HandleAutoDetectRecording(ctx, userID, audioReader)
+	if err != nil {
+		log.Printf("Error handling auto-detect recording: %v", err)
+		b.sendMessage(chatID, "❌ Error submitting recording. Please try again.")
+		return
+	}
+
+	// Update the processing message with success
+	successText := "✅ <b>Recording Submitted!</b>\n\n"
+	successText += fmt.Sprintf("🆔 Recording ID: <code>%s</code>\n", recording.ID)
+	successText += fmt.Sprintf("📊 Status: %s\n\n", recording.Status)
+	successText += "⏳ Auto-detection is processing...\n"
+	successText += "Check back in 10-30 seconds for results."
+
+	edit := tgbotapi.NewEditMessageText(chatID, sent.MessageID, successText)
+	edit.ParseMode = "HTML"
+	b.api.Send(edit)
+
+	// Offer to check status or create new recording
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(
+				"🔄 Check Status",
+				fmt.Sprintf("check:%s", recording.ID),
+			),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(
+				"🎤 New Auto-Detect",
+				"new_autodetect",
+			),
+			tgbotapi.NewInlineKeyboardButtonData(
+				"📝 Manual Mode",
+				"newrecord",
+			),
+		),
+	)
+
+	replyMsg := tgbotapi.NewMessage(chatID, "What would you like to do?")
 	replyMsg.ReplyMarkup = keyboard
 	b.api.Send(replyMsg)
 }

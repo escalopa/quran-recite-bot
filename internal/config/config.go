@@ -2,87 +2,75 @@ package config
 
 import (
 	"fmt"
-	"os"
+	"strings"
 
-	"gopkg.in/yaml.v3"
+	"github.com/spf13/viper"
 )
 
 type Config struct {
-	Telegram TelegramConfig `yaml:"telegram"`
-	Redis    RedisConfig    `yaml:"redis"`
-	QuranAPI QuranAPIConfig `yaml:"quran_api"`
-	App      AppConfig      `yaml:"app"`
+	Telegram TelegramConfig `mapstructure:"telegram"`
+	Redis    RedisConfig    `mapstructure:"redis"`
+	QuranAPI QuranAPIConfig `mapstructure:"quran_api"`
+	App      AppConfig      `mapstructure:"app"`
 }
 
 type TelegramConfig struct {
-	Token string `yaml:"token"`
+	Token string `mapstructure:"token"`
 }
 
 type RedisConfig struct {
-	Addr     string `yaml:"addr"`
-	Password string `yaml:"password"`
-	DB       int    `yaml:"db"`
+	URI string `mapstructure:"uri"`
 }
 
 type QuranAPIConfig struct {
-	BaseURL string `yaml:"base_url"`
-	APIKey  string `yaml:"api_key"`
+	BaseURL string `mapstructure:"base_url"`
+	APIKey  string `mapstructure:"api_key"`
 }
 
 type AppConfig struct {
-	LocalesDir      string `yaml:"locales_dir"`
-	DefaultLanguage string `yaml:"default_language"`
+	LocalesDir      string `mapstructure:"locales_dir"`
+	DefaultLanguage string `mapstructure:"default_language"`
 }
 
 // Load loads configuration from a YAML file with environment variable overrides
 func Load(filename string) (*Config, error) {
-	data, err := os.ReadFile(filename)
-	if err != nil {
+	v := viper.New()
+
+	// Set config file
+	v.SetConfigFile(filename)
+
+	// Set defaults
+	v.SetDefault("app.locales_dir", "locales")
+	v.SetDefault("app.default_language", "en")
+
+	// Read config file
+	if err := v.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("read config file: %w", err)
 	}
 
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("unmarshal config: %w", err)
-	}
+	// Environment variable configuration
+	v.SetEnvPrefix("")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
 
-	// Override with environment variables if present
-	if token := os.Getenv("TELEGRAM_TOKEN"); token != "" {
-		cfg.Telegram.Token = token
-	}
-	if redisAddr := os.Getenv("REDIS_ADDR"); redisAddr != "" {
-		cfg.Redis.Addr = redisAddr
-	}
-	if redisPassword := os.Getenv("REDIS_PASSWORD"); redisPassword != "" {
-		cfg.Redis.Password = redisPassword
-	}
-	if apiURL := os.Getenv("QURAN_API_URL"); apiURL != "" {
-		cfg.QuranAPI.BaseURL = apiURL
-	}
-	if apiKey := os.Getenv("QURAN_API_KEY"); apiKey != "" {
-		cfg.QuranAPI.APIKey = apiKey
+	// Unmarshal into config struct
+	var cfg Config
+	if err := v.Unmarshal(&cfg); err != nil {
+		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
 
 	// Validate required fields
 	if cfg.Telegram.Token == "" {
 		return nil, fmt.Errorf("telegram token is required")
 	}
-	if cfg.Redis.Addr == "" {
-		return nil, fmt.Errorf("redis address is required")
+	if cfg.Redis.URI == "" {
+		return nil, fmt.Errorf("redis URI is required")
 	}
 	if cfg.QuranAPI.BaseURL == "" {
 		return nil, fmt.Errorf("quran API base URL is required")
 	}
 	if cfg.QuranAPI.APIKey == "" {
 		return nil, fmt.Errorf("quran API key is required")
-	}
-
-	// Set defaults
-	if cfg.App.LocalesDir == "" {
-		cfg.App.LocalesDir = "locales"
-	}
-	if cfg.App.DefaultLanguage == "" {
-		cfg.App.DefaultLanguage = "en"
 	}
 
 	return &cfg, nil

@@ -4,13 +4,14 @@ telegram:
 
 # Redis Configuration
 redis:
-  addr: "localhost:6379"
-  password: ""
-  db: 0
+  uri: "redis://redis:6379/0"
 
 # Quran API Configuration
+# Supports both regular recordings (/recordings) and auto-detect (/recordings/auto-detect)
+# Production: https://quran.namaz.live
+# Local development: http://localhost:8111
 quran_api:
-  base_url: "https://quran.namaz.live"
+  base_url: "http://localhost:8111"
   api_key: "YOUR_API_KEY"
 
 # Application Configuration

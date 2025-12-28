@@ -10,6 +10,9 @@ type QuranAPIPort interface {
 	// SubmitRecording submits a voice recording for analysis
 	SubmitRecording(ctx context.Context, learnerID, ayahID string, audioFile io.Reader) (*Recording, error)
 
+	// SubmitAutoDetect submits a voice recording for auto-detection of ayah(s)
+	SubmitAutoDetect(ctx context.Context, learnerID string, audioFile io.Reader, expectedStartAyahID string, minSimilarity float64) (*Recording, error)
+
 	// GetRecording retrieves a recording by ID
 	GetRecording(ctx context.Context, learnerID, recordingID string) (*Recording, error)
 
@@ -60,11 +63,12 @@ type BotPort interface {
 type State string
 
 const (
-	StateStart         State = "start"
-	StateSelectSurah   State = "select_surah"
-	StateEnterAyah     State = "enter_ayah"
-	StateWaitRecording State = "wait_recording"
-	StateProcessing    State = "processing"
+	StateStart            State = "start"
+	StateSelectSurah      State = "select_surah"
+	StateEnterAyah        State = "enter_ayah"
+	StateWaitRecording    State = "wait_recording"
+	StateWaitAutoDetect   State = "wait_auto_detect"
+	StateProcessing       State = "processing"
 )
 
 // SessionData keys

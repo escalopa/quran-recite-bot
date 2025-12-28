@@ -43,7 +43,7 @@ func run() error {
 	log.Println("i18n initialized")
 
 	// Initialize Redis FSM
-	fsm, err := redis.NewFSM(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
+	fsm, err := redis.NewFSM(cfg.Redis.URI)
 	if err != nil {
 		return err
 	}
